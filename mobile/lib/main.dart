@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
+import 'user_list_screen.dart';
+import 'user_map_screen.dart';
+import 'all_users_map_screen.dart';
 
 void main() {
   runApp(MyApp());
@@ -77,7 +80,12 @@ class HomeScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () => _goToViewData(context),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => AllUsersMapScreen()),
+                );
+              },
               child: Text("View All Users"),
             ),
           ],
@@ -233,47 +241,70 @@ class _ViewDataScreenState extends State<ViewDataScreen> {
 }
 
 // Confirmation Screen
-class ConfirmationScreen extends StatelessWidget {
+class ConfirmationScreen extends StatefulWidget {
   final String userId;
 
   const ConfirmationScreen({required this.userId});
 
-  Future<void> _sendLocation(BuildContext context) async {
-    try {
-      LocationPermission permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Location permission denied")),
-        );
-        return;
-      }
+  @override
+  _ConfirmationScreenState createState() => _ConfirmationScreenState();
+}
 
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
+class _ConfirmationScreenState extends State<ConfirmationScreen> {
+  Timer? _locationTimer;
+  bool _isSharing = false;
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/send-location'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'userId': userId,
-          'lat': position.latitude,
-          'lng': position.longitude,
-        }),
+  @override
+  void dispose() {
+    _locationTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startSharingLocation() async {
+    LocationPermission permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Location permission denied")),
       );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        print("✅ Location shared: ${data['data']}");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Location shared successfully!")),
-        );
-      } else {
-        print("❌ Location share failed.");
-      }
-    } catch (e) {
-      print("❌ Error sharing location: $e");
+      return;
     }
+
+    _isSharing = true;
+
+    _locationTimer = Timer.periodic(Duration(seconds: 1), (_) async {
+      try {
+        Position position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high);
+
+        final response = await http.post(
+          Uri.parse('$baseUrl/send-location'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'userId': widget.userId,
+            'lat': position.latitude,
+            'lng': position.longitude,
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          print("📍 Sent location: ${data['data']}");
+        } else {
+          print("❌ Failed to send location.");
+        }
+      } catch (e) {
+        print("❌ Location error: $e");
+      }
+    });
+  }
+
+  void _stopSharingLocation() {
+    _locationTimer?.cancel();
+    _isSharing = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Stopped sharing location")),
+    );
   }
 
   @override
@@ -291,7 +322,7 @@ class ConfirmationScreen extends StatelessWidget {
             Text("Your User ID:", style: TextStyle(fontSize: 16)),
             SizedBox(height: 8),
             Text(
-              userId,
+              widget.userId,
               style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -304,10 +335,17 @@ class ConfirmationScreen extends StatelessWidget {
               child: Text("Back to Home"),
             ),
             SizedBox(height: 10),
-            ElevatedButton(
-              onPressed: () => _sendLocation(context),
-              child: Text("Share Location"),
-            ),
+            _isSharing
+                ? ElevatedButton(
+                    onPressed: _stopSharingLocation,
+                    child: Text("Stop Sharing Location"),
+                    style:
+                        ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  )
+                : ElevatedButton(
+                    onPressed: _startSharingLocation,
+                    child: Text("Start Sharing Location"),
+                  ),
           ],
         ),
       ),

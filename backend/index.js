@@ -93,6 +93,12 @@ app.post("/send-location", (req, res) => {
   res.status(200).json({ message: "Location saved", data: newLoc });
 });
 
+// GET: locations by userId
+app.get('/locations/:userId', (req, res) => {
+  const { userId } = req.params;
+  const filtered = locationData.filter(loc => loc.userId === userId);
+  res.status(200).json(filtered);
+});
 
 
 app.listen(PORT, () => {
