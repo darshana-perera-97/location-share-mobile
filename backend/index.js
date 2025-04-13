@@ -11,7 +11,7 @@ app.use(express.json());
 
 const dataFilePath = path.join(__dirname, "data.json");
 
-// Load existing data or create new file
+// Load saved data from file
 let sharedData = [];
 
 if (fs.existsSync(dataFilePath)) {
@@ -19,12 +19,15 @@ if (fs.existsSync(dataFilePath)) {
   sharedData = JSON.parse(raw || "[]");
 }
 
-// Save to file
 function saveToFile() {
   fs.writeFileSync(dataFilePath, JSON.stringify(sharedData, null, 2));
 }
 
-// POST: receive name + number, store to file
+function generateUserID() {
+  return "USR-" + Math.floor(100000 + Math.random() * 900000);
+}
+
+// Register user
 app.post("/share-location", (req, res) => {
   const { name, number } = req.body;
 
@@ -32,8 +35,10 @@ app.post("/share-location", (req, res) => {
     return res.status(400).json({ message: "Missing name or number" });
   }
 
+  const userId = generateUserID();
+
   const newEntry = {
-    id: Date.now(),
+    id: userId,
     name,
     number,
     timestamp: new Date().toISOString(),
@@ -42,11 +47,14 @@ app.post("/share-location", (req, res) => {
   sharedData.push(newEntry);
   saveToFile();
 
-  console.log("📥 New entry saved:", newEntry);
-  res.status(200).json({ message: "Data shared successfully", data: newEntry });
+  console.log("📥 Registered user:", newEntry);
+  res.status(200).json({
+    message: "User registered successfully",
+    data: newEntry,
+  });
 });
 
-// GET: return data from memory (loaded from file at start)
+// Get all users
 app.get("/locations", (req, res) => {
   res.status(200).json(sharedData);
 });
