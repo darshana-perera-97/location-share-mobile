@@ -1,18 +1,19 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(MyApp());
 }
 
+const String baseUrl = "http://localhost:3000"; // Use your PC IP on real device http://localhost:3000/dashboard
+
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Location App',
+      title: 'Data Share App',
       home: SplashScreen(),
     );
   }
@@ -39,32 +40,26 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Text('Splash Screen', style: TextStyle(fontSize: 24)),
-      ),
+      body:
+          Center(child: Text('Splash Screen', style: TextStyle(fontSize: 24))),
     );
   }
 }
 
-// Home Screen with two buttons
+// Home Screen
 class HomeScreen extends StatelessWidget {
   void _goToShareForm(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => ShareLocationFormScreen()),
+      MaterialPageRoute(builder: (_) => ShareFormScreen()),
     );
   }
 
-  Future<void> _viewLocations() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    List<String> data = prefs.getStringList('locations') ?? [];
-
-    print("Shared Data:");
-    for (var entry in data) {
-      var decoded = jsonDecode(entry);
-      print(
-          "${decoded['name']} | ${decoded['number']} | ${decoded['lat']}, ${decoded['lng']}");
-    }
+  void _goToViewData(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ViewDataScreen()),
+    );
   }
 
   @override
@@ -77,12 +72,12 @@ class HomeScreen extends StatelessWidget {
           children: [
             ElevatedButton(
               onPressed: () => _goToShareForm(context),
-              child: Text("Share Location"),
+              child: Text("Share Info"),
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _viewLocations,
-              child: Text("View Locations"),
+              onPressed: () => _goToViewData(context),
+              child: Text("View Shared Data"),
             ),
           ],
         ),
@@ -91,14 +86,13 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// New Page: Share Location Form
-class ShareLocationFormScreen extends StatefulWidget {
+// Share Form Screen (no location)
+class ShareFormScreen extends StatefulWidget {
   @override
-  _ShareLocationFormScreenState createState() =>
-      _ShareLocationFormScreenState();
+  _ShareFormScreenState createState() => _ShareFormScreenState();
 }
 
-class _ShareLocationFormScreenState extends State<ShareLocationFormScreen> {
+class _ShareFormScreenState extends State<ShareFormScreen> {
   final _nameController = TextEditingController();
   final _numberController = TextEditingController();
 
@@ -107,50 +101,34 @@ class _ShareLocationFormScreenState extends State<ShareLocationFormScreen> {
     final number = _numberController.text.trim();
 
     if (name.isEmpty || number.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please enter name and number")),
-      );
+      print("❗ Name and number are required");
       return;
     }
 
-    LocationPermission permission = await Geolocator.requestPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Location permission denied")),
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/share-location'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'name': name, 'number': number}),
       );
-      return;
+
+      if (response.statusCode == 200) {
+        print("✅ Sent to backend:");
+        print(jsonDecode(response.body));
+      } else {
+        print("❌ Failed with status: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("❌ Error: $e");
     }
-
-    Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high);
-
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    List<String> existing = prefs.getStringList('locations') ?? [];
-
-    Map<String, dynamic> newEntry = {
-      'name': name,
-      'number': number,
-      'lat': position.latitude,
-      'lng': position.longitude,
-    };
-
-    existing.add(jsonEncode(newEntry));
-    await prefs.setStringList('locations', existing);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Location shared successfully!")),
-    );
-
-    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Share Your Location")),
+      appBar: AppBar(title: Text("Share Info")),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
@@ -166,11 +144,68 @@ class _ShareLocationFormScreenState extends State<ShareLocationFormScreen> {
             SizedBox(height: 30),
             ElevatedButton(
               onPressed: _shareNow,
-              child: Text("Share Location Now"),
+              child: Text("Share Now"),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+// View shared data
+class ViewDataScreen extends StatefulWidget {
+  @override
+  _ViewDataScreenState createState() => _ViewDataScreenState();
+}
+
+class _ViewDataScreenState extends State<ViewDataScreen> {
+  List<dynamic> _data = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/locations'));
+      if (response.statusCode == 200) {
+        setState(() {
+          _data = jsonDecode(response.body);
+          _loading = false;
+        });
+      } else {
+        throw Exception("Failed to load data");
+      }
+    } catch (e) {
+      print("❌ Error loading data: $e");
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Shared Data")),
+      body: _loading
+          ? Center(child: CircularProgressIndicator())
+          : _data.isEmpty
+              ? Center(child: Text("No data shared yet."))
+              : ListView.builder(
+                  itemCount: _data.length,
+                  itemBuilder: (context, index) {
+                    final item = _data[index];
+                    return ListTile(
+                      leading: Icon(Icons.person),
+                      title: Text("${item['name']} (${item['number']})"),
+                      subtitle: Text(
+                          "Shared at: ${item['timestamp'].toString().split('T')[0]}"),
+                    );
+                  },
+                ),
     );
   }
 }
