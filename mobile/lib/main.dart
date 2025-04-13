@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 
 void main() {
   runApp(MyApp());
@@ -237,6 +238,44 @@ class ConfirmationScreen extends StatelessWidget {
 
   const ConfirmationScreen({required this.userId});
 
+  Future<void> _sendLocation(BuildContext context) async {
+    try {
+      LocationPermission permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Location permission denied")),
+        );
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/send-location'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'userId': userId,
+          'lat': position.latitude,
+          'lng': position.longitude,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print("✅ Location shared: ${data['data']}");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Location shared successfully!")),
+        );
+      } else {
+        print("❌ Location share failed.");
+      }
+    } catch (e) {
+      print("❌ Error sharing location: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -263,6 +302,11 @@ class ConfirmationScreen extends StatelessWidget {
               onPressed: () =>
                   Navigator.popUntil(context, (route) => route.isFirst),
               child: Text("Back to Home"),
+            ),
+            SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: () => _sendLocation(context),
+              child: Text("Share Location"),
             ),
           ],
         ),

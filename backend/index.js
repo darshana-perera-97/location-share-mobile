@@ -59,6 +59,42 @@ app.get("/locations", (req, res) => {
   res.status(200).json(sharedData);
 });
 
+const locationsFile = path.join(__dirname, "locations.json");
+let locationData = [];
+
+// Load existing locations
+if (fs.existsSync(locationsFile)) {
+  const raw = fs.readFileSync(locationsFile);
+  locationData = JSON.parse(raw || "[]");
+}
+
+function saveLocations() {
+  fs.writeFileSync(locationsFile, JSON.stringify(locationData, null, 2));
+}
+
+// New endpoint: Accept userID + location
+app.post("/send-location", (req, res) => {
+  const { userId, lat, lng } = req.body;
+
+  if (!userId || lat == null || lng == null) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  const newLoc = {
+    userId,
+    timestamp: new Date().toISOString(),
+    location: { lat, lng },
+  };
+
+  locationData.push(newLoc);
+  saveLocations();
+
+  console.log("📍 Location received:", newLoc);
+  res.status(200).json({ message: "Location saved", data: newLoc });
+});
+
+
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
